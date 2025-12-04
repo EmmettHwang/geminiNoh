@@ -6,6 +6,9 @@ import html
 from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PyQt6 import uic
 from dotenv import load_dotenv 
+from konlpy.tag import Kkma
+from PyQt6.QtCore import QPropertyAnimation, QEasingCurve   # 애니메이션용
+from PyQt6.QtCore import QPoint # QPoint 임포트 추가
 
 # Google GenAI 라이브러리 임포트
 try:
@@ -71,13 +74,29 @@ class GeminiApp(QMainWindow, form_class):
         self.btnSent.clicked.connect(self.ask_gemini) 
         self.btnSent.setVisible(False)
         # Enter 키 입력 시에도 작동하도록 연결
-        self.lineEditMyQuestion.returnPressed.connect(self.ask_gemini)
+        self.lineEditMyQuestion.returnPressed.connect(self.ask_gemini)        
         
-        # 검색 버튼 연결 (UI에 btnSearch가 있다면 연결)
-        try:
-            self.btnSearch.clicked.connect(self.search_mysql)
-        except Exception:
-            pass
+        # label_2 원래 위치 저장
+        self.label2_origin = self.label_2.pos()
+
+        # 좌우 흔들기 애니메이션
+        self.label2_anim = QPropertyAnimation(self.label_2, b"pos")
+        self.label2_anim.setDuration(600)   # 0.6초 왕복
+        self.label2_anim.setLoopCount(-1)   # 무한 반복
+        self.label2_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+        # 흔들림 범위 설정 (좌우 10px)
+        x, y = self.label2_origin.x(), self.label2_origin.y()
+        self.label2_anim.setStartValue(self.label2_origin)
+        self.label2_anim.setKeyValueAt(0.5, self.label2_origin + QPoint(10, 0))
+        self.label2_anim.setEndValue(self.label2_origin)
+    
+    def start_label2_animation(self):
+        self.label2_anim.start()
+
+    def stop_label2_animation(self):
+        self.label2_anim.stop()
+        self.label_2.move(self.label2_origin)   # 위치 원위치 복귀
 
     def ask_gemini(self): 
         # API 클라이언트 초기화 실패 시 처리
@@ -95,13 +114,16 @@ class GeminiApp(QMainWindow, form_class):
         self.lineEditMyQuestion.clear()
         
         # 먼저 DB에서 검색 시도
+        self.start_label2_animation()  # 애니메이션 시작
         if self.search_mysql(search_text=question) == True:
+            self.stop_label2_animation()  # 애니메이션 중지 
             return  # 검색 결과가 있으면 새 질문 처리 중단
 
 
         # 응답 대기 메시지 표시 (HTML)
         waiting_html = f"<div>➡️ 질문: <b>{html.escape(question)}</b></div>" \
                    f"<div style='color:gray;'>Gemini가 응답을 생성하는 중입니다... 잠시만 기다려주세요.</div>"
+        self.answerDisplay.setPlainText("")             # 먼저 지우고
         self.answerDisplay.setHtml(waiting_html)
         QApplication.processEvents() # UI 갱신 (반드시 필요)
 
@@ -116,12 +138,15 @@ class GeminiApp(QMainWindow, form_class):
             esc_question = html.escape(question).replace('\n', '<br>')
             esc_response = html.escape(response.text).replace('\n', '<br>')
             html_content = (
-                f"<div>➡️ 질문: <b>{esc_question}</b></div>"
+                f"<div style='color:#1E90FF; font-weight:bold;'>[Gemini 생성 응답]</div>"                
+                f"<div>➡️ 질문: <b><span style='color:red;'>{esc_question}</span></b></div>"
                 f"<hr>"
                 f"<div style='color:green; white-space:pre-wrap;'>{esc_response}</div>"
                 f"<div style='color:gray; margin-top:8px;'>[제미나이nh]</div>"
             )
-            self.answerDisplay.setHtml(html_content)
+
+            self.answerDisplay.setPlainText("")                   # 먼저 지우고
+            self.answerDisplay.setHtml(html_content )   # 새 결과 출력
             
             # (답변 표시 후)
             self.save_to_mysql(question, response.text)
@@ -132,8 +157,11 @@ class GeminiApp(QMainWindow, form_class):
             print(error_message)
             err_html = f"<div>➡️ 질문: <b>{html.escape(question)}</b></div>" \
                        f"<div style='color:red;'>🚨 오류: {html.escape(str(error_message))}</div>" \
-                       f"<div style='color:gray; margin-top:8px;'>[제미나이nh]</div>"
+                       f"<div style='color:gray; margin-top:8px;'>[by geminiNoh]</div>"
+            self.answerDisplay.setPlainText("")            # 먼저 지우고
             self.answerDisplay.setHtml(err_html)
+        finally:
+            self.stop_label2_animation()  # 애니메이션 중지
 
     def save_to_mysql(self, question, answer):
         conn = None
@@ -220,7 +248,8 @@ class GeminiApp(QMainWindow, form_class):
                     # 사용자에게 알림
                     notice_html = f"<div style='color:gray;'>원문이 길어 요약(500자 이내)으로 저장했습니다.</div>"
                     try:
-                        prev_html = self.answerDisplay.toHtml()
+                        prev_html = self.answerDisplay.toHtml() # 기존 내용 가져오기가 필요 없을땐 생략 가능
+                        self.answerDisplay.setPlainText("")            # 먼저 지우고
                         self.answerDisplay.setHtml(prev_html + notice_html)
                     except Exception:
                         self.answerDisplay.append("원문이 길어 요약(500자 이내)으로 저장했습니다.")
@@ -238,14 +267,35 @@ class GeminiApp(QMainWindow, form_class):
 
     def search_mysql(self, search_text=None):
         """
-        DB 검색 함수.
-        search_text 인자가 있으면 그것으로 검색하고,
-        없으면 입력창(lineEditMyQuestion)의 텍스트를 가져와서 검색합니다.
+        DB 검색 함수(명사 추출 기반 다중 검색).
+        - search_text가 있으면 그것 기반으로 수행.
+        - 없으면 lineEditMyQuestion 내용으로 검색.
+        - konlpy를 이용해 명사를 추출하고, 각 명사를 LIKE 검색 조건으로 사용한다.
         """
         if search_text is not None:
-            keyword = search_text.strip()
+            text = search_text.strip()
         else:
-            keyword = self.lineEditMyQuestion.text().strip()
+            text = self.lineEditMyQuestion.text().strip()
+
+        # ---------------------------
+        # 1) konlpy로 명사 추출
+        # ---------------------------
+        kkma = Kkma()
+        nouns = kkma.nouns(text)
+
+        # 명사가 없으면 원래 단일 검색어로 사용
+        if not nouns:
+            nouns = [text]
+
+        # 너무 짧은(1자) 명사는 보통 의미가 약하므로 필터링(원하면 제거 가능)
+        nouns = [n for n in nouns if len(n) > 1]
+
+
+
+
+        # 명사가 하나도 안 남으면 전체 문장을 사용
+        if not nouns:
+            nouns = [text]
 
         try:
             conn = pymysql.connect(
@@ -259,44 +309,95 @@ class GeminiApp(QMainWindow, form_class):
             )
 
             with conn.cursor() as cursor:
-                if keyword:
-                    sql = ("SELECT question, answer, create_at "
-                           "FROM chat_history "
-                           "WHERE question LIKE %s OR answer LIKE %s "
-                           "ORDER BY create_at DESC LIMIT 100")
-                    like_kw = f"%{keyword}%"
-                    cursor.execute(sql, (like_kw, like_kw))
+                if nouns:
+                    # --------------------------------------------
+                    # 2) 명사들로 다중 LIKE 조건 생성
+                    # --------------------------------------------
+                    # question LIKE '%키워드%' OR answer LIKE '%키워드%'
+                    conditions = []
+                    params = []
+
+                    for n in nouns:
+                        like_n = f"%{n}%"
+                        conditions.append("(question LIKE %s OR answer LIKE %s)")
+                        params.extend([like_n, like_n])
+
+                    where_clause = " OR ".join(conditions)
+
+                    sql = (
+                        "SELECT * "
+                        "FROM chat_history "
+                        f"WHERE {where_clause} "
+                        
+                    )
+
+                    cursor.execute(sql, params)
+
                 else:
-                    # 검색어가 없으면 작동하지 않도록 수정하거나, 최근 대화를 보여주도록 설정
-                    # 여기서는 검색어가 없으면 False 반환하여 Gemini에게 질문하도록 함
                     return False
 
-                rows = cursor.fetchall()
-
+            rows = cursor.fetchall()
             if not rows:
-                # 검색 결과가 없으면 Gemini에게 질문하기 위해 False 반환
                 return False
 
-            # 결과 포맷팅
-            lines = []
-            lines.append(f"<div style='color:blue; font-weight:bold;'>[DB 검색 결과: '{keyword}']</div><hr>")
+            # --- 2차 필터: 명사 80% 이상 겹치는 row만 선별 ---
+            kkma = Kkma()
+            filtered_rows = []
+
+            for row in rows:
+                q_text = str(row.get('question', ''))
+                a_text = str(row.get('answer', ''))
+
+                row_q_n = kkma.nouns(q_text)
+                row_a_n = kkma.nouns(a_text)
+                row_nouns = set([n for n in row_q_n + row_a_n if len(n) > 1])
+
+                # 교집합 개수
+                overlap = len(row_nouns.intersection(set(nouns)))
+
+                # *** 추가: 겹침 비율 계산 ***
+                if len(nouns) > 0:
+                    overlap_ratio = overlap / len(nouns)
+                else:
+                    overlap_ratio = 0
+
+                # *** 조건: 겹침 비율이 0.8 이상일 때만 인정 ***
+                if overlap_ratio >= 0.8:
+                    filtered_rows.append(row)
+
             
-            for i, row in enumerate(rows, start=1):
-                created = row.get('create_at') or row.get('created_at') or ''
+            # 필터 후 결과 없으면 Gemini 호출로 이동
+            if not filtered_rows:
+                return False
+
+            # 결과 표시
+            lines = []
+            lines.append(
+                f"<div style='color:#8A2BE2; font-weight:bold;'>[DB 검색 응답]</div>"
+                f"<div style='color:gray;'>검색어: {', '.join(nouns)}</div><hr>"
+            )
+
+            for i, row in enumerate(filtered_rows, start=1):
+                print("created_at raw value:", row['created_at'], type(row['created_at']))
+                created = row.get('created_at', '')              
+                # created_at이 None이거나 빈 문자열인 경우 처리
+                if created is None or created == '':
+                    created = "저장된 날짜가 없어서 " + datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 q = row.get('question', '')
                 a = row.get('answer', '')
                 esc_q = html.escape(str(q)).replace('\n', '<br>')
                 esc_a = html.escape(str(a)).replace('\n', '<br>')
+
                 block = (
                     f"<div style='color:blue; margin-bottom:15px;'>"
                     f"<div><b>{i}. [{html.escape(str(created))}]</b></div>"
-                    f"<div><b>Q:</b> {esc_q}</div>"
+                    f"<div><b>Q:</b> <span style='color:red;'>{esc_q}</span></div>"
                     f"<div><b>A:</b> {esc_a}</div>"
                     f"</div>"
                 )
                 lines.append(block)
-
             result_html = "".join(lines)
+            self.answerDisplay.setPlainText("")            # 먼저 지우고
             self.answerDisplay.setHtml(result_html)
             return True
 
