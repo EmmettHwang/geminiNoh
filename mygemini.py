@@ -1,3 +1,4 @@
+# 내가 수정한 내용이 있다. 
 import sys
 import os
 from PyQt6.QtWidgets import (
