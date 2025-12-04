@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>300</height>
+    <height>352</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -76,6 +76,23 @@
    </property>
    <property name="text">
     <string>제미나이nh</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="btnSearch">
+   <property name="geometry">
+    <rect>
+     <x>300</x>
+     <y>300</y>
+     <width>81</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>찾기</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>search.png</normaloff>search.png</iconset>
    </property>
   </widget>
  </widget>

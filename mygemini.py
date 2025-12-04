@@ -8,6 +8,7 @@ import os
 import pymysql
 ''' datetime은 날짜와 시간을 다루기 위한 표준 라이브러리입니다. 설치가 필요하지 않습니다. '''
 from datetime import datetime
+import html
 from PyQt6.QtWidgets import (
     QApplication, 
     QWidget, 
@@ -31,11 +32,7 @@ except ImportError:
     print("설치하려면 터미널에서 'pip install google-genai' 명령을 실행하세요.")
     sys.exit(1)
 
-# --- ⚠️ 중요: Gemini API 키 설정 ⚠️ ---
-# 사용자가 제공한 API 키를 환경 변수에 설정합니다.
-# 실제 키를 여기에 넣어주세요.
-os.environ["GEMINI_API_KEY"] = "AIzaSyDFYx3mr8dY8HwRMaPD2egzjVso7mkgops"
-# ------------------------------------
+
 # [추가된 부분 1] .env 파일을 읽기 위한 라이브러리
 from dotenv import load_dotenv 
 
@@ -92,7 +89,12 @@ class GeminiApp(QWidget):
         
         self.btnSent = QPushButton("전송 (Sent)") # 전송 버튼 (QPushButton)
         self.btnSent.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; font-weight: bold;")
-
+        
+        # 검색 버튼: 사용자가 Qt Designer로 이미 추가했을 수도 있으므로
+        # 존재하지 않으면 코드에서 생성합니다.
+        if not hasattr(self, 'btnSearch'):
+            self.btnSearch = QPushButton("검색 (Search)")
+            self.btnSearch.setStyleSheet("background-color: #2196F3; color: white; padding: 10px; font-weight: bold;")
         # 3. 레이아웃 설정
         main_layout = QVBoxLayout()
         main_layout.addWidget(QLabel("Gemini 응답:"))
@@ -102,6 +104,8 @@ class GeminiApp(QWidget):
         input_layout = QHBoxLayout()
         input_layout.addWidget(self.lineEditMyQuestion)
         input_layout.addWidget(self.btnSent)
+        # 검색 버튼을 입력 레이아웃에 추가
+        input_layout.addWidget(self.btnSearch)
         
         main_layout.addLayout(input_layout)
         self.setLayout(main_layout)
@@ -110,6 +114,11 @@ class GeminiApp(QWidget):
         self.btnSent.clicked.connect(self.ask_gemini) 
         # Enter 키 입력 시에도 작동하도록 연결
         self.lineEditMyQuestion.returnPressed.connect(self.ask_gemini)
+        # 검색 버튼 연결: DB에서 저장된 대화 내역 검색 및 출력
+        try:
+            self.btnSearch.clicked.connect(self.search_mysql)
+        except Exception:
+            pass
 
     def ask_gemini(self): 
         # API 클라이언트 초기화 실패 시 처리
@@ -126,8 +135,10 @@ class GeminiApp(QWidget):
         # 질문 입력창 비우기
         self.lineEditMyQuestion.clear()
 
-        # 응답 대기 메시지 표시
-        self.answerDisplay.setText(f"➡️ 질문: {question}\n\nGemini가 응답을 생성하는 중입니다... 잠시만 기다려주세요.")
+        # 응답 대기 메시지 표시 (HTML)
+        waiting_html = f"<div>➡️ 질문: <b>{html.escape(question)}</b></div>" \
+                   f"<div style='color:gray;'>Gemini가 응답을 생성하는 중입니다... 잠시만 기다려주세요.</div>"
+        self.answerDisplay.setHtml(waiting_html)
         QApplication.processEvents() # UI 갱신 (반드시 필요)
 
         try:
@@ -138,9 +149,16 @@ class GeminiApp(QWidget):
             )
 
             # 응답 표시 및 [제미나이nh] 추가
-            # 이전 질문을 포함하여 응답을 표시
-            full_response_text = f"➡️ 질문: {question}\n\n" + response.text + "\n\n[제미나이nh]"
-            self.answerDisplay.setText(full_response_text)
+            # HTML로 질문/응답을 색상 처리: 응답은 녹색으로 표시
+            esc_question = html.escape(question).replace('\n', '<br>')
+            esc_response = html.escape(response.text).replace('\n', '<br>')
+            html_content = (
+                f"<div>➡️ 질문: <b>{esc_question}</b></div>"
+                f"<hr>"
+                f"<div style='color:green; white-space:pre-wrap;'>{esc_response}</div>"
+                f"<div style='color:gray; margin-top:8px;'>[제미나이nh]</div>"
+            )
+            self.answerDisplay.setHtml(html_content)
             
             # (답변 표시 후)
             self.save_to_mysql(question, response.text)
@@ -149,9 +167,14 @@ class GeminiApp(QWidget):
             # API 호출 중 예외 처리
             error_message = f"API 호출 중 오류 발생: {e}"
             print(error_message)
-            self.answerDisplay.setText(f"➡️ 질문: {question}\n\n🚨 오류: {error_message}\n\n[제미나이nh]")
+            err_html = f"<div>➡️ 질문: <b>{html.escape(question)}</b></div>" \
+                       f"<div style='color:red;'>🚨 오류: {html.escape(str(error_message))}</div>" \
+                       f"<div style='color:gray; margin-top:8px;'>[제미나이nh]</div>"
+            self.answerDisplay.setHtml(err_html)
 
     def save_to_mysql(self, question, answer):
+        conn = None
+        conn2 = None
         try:
             # 1. 현재 시간 구하기
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -178,12 +201,163 @@ class GeminiApp(QWidget):
             # 5. 저장 확정 (Commit)
             conn.commit()
             print(f"✅ MySQL 저장 성공: {current_time}")
-
+        
         except Exception as e:
-            print(f"❌ MySQL 저장 실패: {e}")
+            # MySQL Data too long for column -> 에러코드 1406 처리
+            err_str = str(e)
+            print(f"❌ MySQL 저장 실패: {err_str}")
+
+            is_data_too_long = False
+            try:
+                # pymysql.DataError / error code check
+                if hasattr(e, 'args') and e.args:
+                    # e.args[0]이 에러코드일 수 있음
+                    if isinstance(e.args[0], int) and e.args[0] == 1406:
+                        is_data_too_long = True
+                if '1406' in err_str or 'Data too long' in err_str:
+                    is_data_too_long = True
+            except Exception:
+                is_data_too_long = False
+
+            if is_data_too_long:
+                # 기존 연결 안전하게 종료
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = None
+
+                # 요약 시도: 가능하면 Gemini로 요약하고, 실패하면 잘라서 저장
+                summarized = None
+                try:
+                    if self.client:
+                        prompt = (
+                            "아래 텍스트를 한국어로 500자 이내로 요약해 주세요.\n\n" + str(answer)
+                        )
+                        summ_resp = self.client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=prompt
+                        )
+                        summarized = summ_resp.text.strip()
+                except Exception as se:
+                    print(f"요약 시도 중 오류: {se}")
+
+                # 요약이 없거나 너무 긴 경우 강제 자르기
+                if not summarized:
+                    summarized = str(answer)[:500]
+                if len(summarized) > 500:
+                    summarized = summarized[:500]
+
+                # 재시도: 새 연결로 안전하게 INSERT
+                try:
+                    sql = "INSERT INTO chat_history (question, answer, create_at) VALUES (%s, %s, %s)"
+                    conn2 = pymysql.connect(
+                        host='bitnmeta2.synology.me',
+                        user='iyrc',
+                        passwd='Dodan1004!',
+                        db='gemini_ai',
+                        charset='utf8',
+                        port=3307,
+                        cursorclass=pymysql.cursors.DictCursor
+                    )
+                    with conn2.cursor() as cursor2:
+                        cursor2.execute(sql, (question, summarized, current_time))
+                    conn2.commit()
+                    print(f"✅ MySQL 요약 저장 성공: {current_time}")
+                    # 사용자에게 알림: 요약 저장되었음을 표시 (회색 알림)
+                    notice_html = (
+                        f"<div style='color:gray;'>원문이 길어 요약(500자 이내)으로 저장했습니다.</div>"
+                    )
+                    # 기존 answerDisplay 내용 뒤에 알림을 추가
+                    try:
+                        prev_html = self.answerDisplay.toHtml()
+                        self.answerDisplay.setHtml(prev_html + notice_html)
+                    except Exception:
+                        self.answerDisplay.append("원문이 길어 요약(500자 이내)으로 저장했습니다.")
+                except Exception as re:
+                    print(f"❌ 요약 재저장 실패: {re}")
+            # 기타 DB 에러는 그대로 로깅
         
         finally:
             # 6. 연결 종료 (자원 해제)
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            if conn2:
+                try:
+                    conn2.close()
+                except Exception:
+                    pass
+
+    def search_mysql(self):
+        """DB의 `chat_history`에서 저장된 항목을 검색하여 `answerDisplay`에 출력합니다.
+        - 검색어가 `lineEditMyQuestion`에 있으면 그 키워드로 LIKE 검색합니다.
+        - 검색어가 비어있으면 최신 항목을 일부 가져와 출력합니다.
+        """
+        keyword = self.lineEditMyQuestion.text().strip()
+
+        try:
+            conn = pymysql.connect(
+                host='bitnmeta2.synology.me',
+                user='iyrc',
+                passwd='Dodan1004!',
+                db='gemini_ai',
+                charset='utf8',
+                port=3307,
+                cursorclass=pymysql.cursors.DictCursor
+            )
+
+            with conn.cursor() as cursor:
+                if keyword:
+                    sql = ("SELECT question, answer, create_at "
+                           "FROM chat_history "
+                           "WHERE question LIKE %s OR answer LIKE %s "
+                           "ORDER BY create_at DESC LIMIT 100")
+                    like_kw = f"%{keyword}%"
+                    cursor.execute(sql, (like_kw, like_kw))
+                else:
+                    sql = ("SELECT question, answer, create_at "
+                           "FROM chat_history "
+                           "ORDER BY create_at DESC LIMIT 50")
+                    cursor.execute(sql)
+
+                rows = cursor.fetchall()
+
+            if not rows:
+                # 검색 결과가 없음을 파랑색으로 표시
+                self.answerDisplay.setHtml("<div style='color:blue;'>검색 결과가 없습니다.</div>")
+                return
+
+            # 결과 포맷팅
+            lines = []
+            for i, row in enumerate(rows, start=1):
+                created = row.get('create_at') or row.get('created_at') or ''
+                q = row.get('question', '')
+                a = row.get('answer', '')
+                esc_q = html.escape(str(q)).replace('\n', '<br>')
+                esc_a = html.escape(str(a)).replace('\n', '<br>')
+                block = (
+                    f"<div style='color:blue; margin-bottom:10px;'>"
+                    f"<div><b>{i}. [{html.escape(str(created))}]</b></div>"
+                    f"<div><b>Q:</b> {esc_q}</div>"
+                    f"<div><b>A:</b> {esc_a}</div>"
+                    f"</div>"
+                )
+                lines.append(block)
+
+            result_html = "".join(lines)
+            # 검색 결과(히스토리)를 파랑색 HTML로 출력
+            self.answerDisplay.setHtml(result_html)
+
+        except Exception as e:
+            err = f"DB 검색 중 오류 발생: {e}"
+            print(err)
+            self.answerDisplay.setText(err)
+
+        finally:
             if 'conn' in locals():
                 conn.close()
 
