@@ -30,7 +30,22 @@ except ImportError:
 # 실제 키를 여기에 넣어주세요.
 os.environ["GEMINI_API_KEY"] = "AIzaSyDFYx3mr8dY8HwRMaPD2egzjVso7mkgops"
 # ------------------------------------
+# [추가된 부분 1] .env 파일을 읽기 위한 라이브러리
+from dotenv import load_dotenv 
 
+# Google GenAI 라이브러리 임포트
+try:
+    from google import genai
+except ImportError:
+    print("🚨 오류: 'google-genai' 라이브러리를 찾을 수 없습니다.")
+    sys.exit(1)
+
+# --- [수정된 부분] API 키 설정 ---
+# 1. .env 파일에서 환경 변수를 불러옵니다.
+load_dotenv()
+# 2. 환경 변수에서 GEMINI_API_KEY 값을 읽어옵니다
+api_key = os.getenv("GEMINI_API_KEY")
+# ------------------------------------
 class GeminiApp(QWidget):
     
     def __init__(self):
@@ -40,8 +55,7 @@ class GeminiApp(QWidget):
         
         # 1. Gemini 클라이언트 초기화 및 API 키 확인
         self.client = None
-        api_key = os.getenv("GEMINI_API_KEY")
-
+        
         if not api_key or api_key == "YOUR_ACTUAL_GEMINI_API_KEY_HERE":
             # API 키가 설정되지 않았거나 더미 값일 경우 경고 표시
             QMessageBox.critical(
