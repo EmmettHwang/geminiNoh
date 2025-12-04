@@ -2,6 +2,12 @@
 # 이것은 다른 친구가 내용을 수정해서 push 한것이라고 가정하고 
 import sys
 import os
+''' pymysql은 MySQL과 연동하기 위한 라이브러리입니다. 설치가 필요할 수 있습니다.
+터미널에서 'pip install pymysql' 명령어'
+를 실행하여 설치하세요. '''
+import pymysql
+''' datetime은 날짜와 시간을 다루기 위한 표준 라이브러리입니다. 설치가 필요하지 않습니다. '''
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, 
     QWidget, 
@@ -136,12 +142,50 @@ class GeminiApp(QWidget):
             full_response_text = f"➡️ 질문: {question}\n\n" + response.text + "\n\n[제미나이nh]"
             self.answerDisplay.setText(full_response_text)
             
+            # (답변 표시 후)
+            self.save_to_mysql(question, response.text)
+            
         except Exception as e:
             # API 호출 중 예외 처리
             error_message = f"API 호출 중 오류 발생: {e}"
             print(error_message)
             self.answerDisplay.setText(f"➡️ 질문: {question}\n\n🚨 오류: {error_message}\n\n[제미나이nh]")
 
+    def save_to_mysql(self, question, answer):
+        try:
+            # 1. 현재 시간 구하기
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # 2. DB 연결 (요청마다 연결하고 끊는 것이 끊김 현상 방지에 좋습니다)
+            conn = pymysql.connect( 
+                host='bitnmeta2.synology.me', # MySQL 호스트 주소
+                user='iyrc', # MySQL 사용자명
+                passwd='Dodan1004!', # MySQL 비밀번호
+                db='gemini_ai', # 사용할 데이터베이스 이름
+                charset='utf8', # 문자셋 설정
+                port=3307,  
+                cursorclass=pymysql.cursors.DictCursor # 딕셔너리 커서 사용
+            )
+
+            with conn.cursor() as cursor:
+                # 3. SQL 쿼리 작성 
+                # ★ 'chat_history' 부분을 실제 테이블 이름으로 바꿔주세요!
+                sql = "INSERT INTO chat_history (question, answer, create_at) VALUES (%s, %s, %s)"
+                
+                # 4. 실행 (데이터 매핑)
+                cursor.execute(sql, (question, answer, current_time))
+            
+            # 5. 저장 확정 (Commit)
+            conn.commit()
+            print(f"✅ MySQL 저장 성공: {current_time}")
+
+        except Exception as e:
+            print(f"❌ MySQL 저장 실패: {e}")
+        
+        finally:
+            # 6. 연결 종료 (자원 해제)
+            if 'conn' in locals():
+                conn.close()
 
 if __name__ == "__main__":
     # QApplication 인스턴스 생성
