@@ -1,120 +1,79 @@
-# 내가 수정한 내용이 있다. 
-# 이것은 다른 친구가 내용을 수정해서 push 한것이라고 가정하고 
 import sys
 import os
-''' pymysql은 MySQL과 연동하기 위한 라이브러리입니다. 설치가 필요할 수 있습니다.
-터미널에서 'pip install pymysql' 명령어'
-를 실행하여 설치하세요. '''
 import pymysql
-''' datetime은 날짜와 시간을 다루기 위한 표준 라이브러리입니다. 설치가 필요하지 않습니다. '''
 from datetime import datetime
 import html
-from PyQt6.QtWidgets import (
-    QApplication, 
-    QWidget, 
-    QLineEdit, 
-    QTextEdit, 
-    QPushButton,
-    QVBoxLayout,  # 수직 레이아웃 관리
-    QHBoxLayout,  # 수평 레이아웃 관리
-    QMessageBox,  # 메시지 박스 사용 (sys.exit 대신 권장)
-    QLabel
-)
-from PyQt6.QtCore import Qt
-# Google GenAI 라이브러리 임포트
-try:
-    # 'google-genai' 대신 'google-generativeai'를 사용하는 경우도 있으므로
-    # 최신 라이브러리인 'google-genai'를 시도합니다.
-    from google import genai
-except ImportError:
-    # 만약 'google' 모듈이 없다면 설치 안내 후 종료
-    print("🚨 오류: 'google-genai' 라이브러리를 찾을 수 없습니다.")
-    print("설치하려면 터미널에서 'pip install google-genai' 명령을 실행하세요.")
-    sys.exit(1)
-
-
-# [추가된 부분 1] .env 파일을 읽기 위한 라이브러리
+from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox
+from PyQt6 import uic
 from dotenv import load_dotenv 
 
 # Google GenAI 라이브러리 임포트
 try:
+    # 'google-genai' 라이브러리 시도
     from google import genai
 except ImportError:
     print("🚨 오류: 'google-genai' 라이브러리를 찾을 수 없습니다.")
+    print("설치하려면 터미널에서 'pip install google-genai' 명령을 실행하세요.")
     sys.exit(1)
 
-# --- [수정된 부분] API 키 설정 ---
-# 1. .env 파일에서 환경 변수를 불러옵니다.
-load_dotenv()
-# 2. 환경 변수에서 GEMINI_API_KEY 값을 읽어옵니다
-api_key = os.getenv("GEMINI_API_KEY")
-# ------------------------------------
-class GeminiApp(QWidget):
+# UI 파일 로드
+try:
+    form_class = uic.loadUiType("mygemini.ui")[0]
+except Exception as e:
+    app = QApplication(sys.argv)
+    QMessageBox.critical(None, "UI 파일 오류", f"UI 파일을 찾을 수 없습니다.\n\n에러 내용: {e}")
+    sys.exit()
+
+class GeminiApp(QMainWindow, form_class):
     
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Gemini Q&A 챗봇")
-        self.setGeometry(100, 100, 800, 600)  # 창 크기 설정
+        super().__init__()        
+        self.setupUi(self)
         
-        # 1. Gemini 클라이언트 초기화 및 API 키 확인
+        # [수정] QTextBrowser 설정 추가
+        # QTextBrowser는 기본적으로 읽기 전용입니다.
+        # 링크가 포함된 답변이 올 경우 브라우저로 열리게 설정합니다.
+        try:
+            self.answerDisplay.setOpenExternalLinks(True)
+        except AttributeError:
+            pass # UI 파일에 해당 위젯이 없으면 무시
+
+        # --- [수정된 부분] API 키 설정 (NameError 해결을 위해 함수 내부로 이동) ---
+        # 1. .env 파일에서 환경 변수를 불러옵니다.
+        load_dotenv()
+        
+        # 2. 환경 변수에서 GEMINI_API_KEY 값을 읽어옵니다
+        api_key = os.getenv("GEMINI_API_KEY")
         self.client = None
         
-        if not api_key or api_key == "YOUR_ACTUAL_GEMINI_API_KEY_HERE":
-            # API 키가 설정되지 않았거나 더미 값일 경우 경고 표시
+        if not api_key: 
+            # API 키가 설정되지 않았을 경우 경고 표시
             QMessageBox.critical(
                 self, 
                 "API 키 오류", 
-                "⚠️ API 키가 설정되지 않았거나 유효하지 않은 더미 값입니다.\n"
-                "코드 상단 os.environ[\"GEMINI_API_KEY\"] = \"...\" 부분에 실제 키를 입력해야 합니다."
+                "⚠️ API 키가 설정되지 않았습니다.\n"
+                ".env 파일에 GEMINI_API_KEY가 올바르게 있는지 확인해주세요."
             )
-            # 클라이언트를 None으로 두어 API 호출을 방지합니다.
+            # 클라이언트를 None으로 둡니다.
         else:
             try:
-                # 환경 변수에서 API 키를 자동으로 로드 시도
-                self.client = genai.Client()
+                # 환경 변수에서 API 키를 사용하여 클라이언트 초기화
+                # 명시적으로 api_key를 전달하는 것이 안전합니다.
+                self.client = genai.Client(api_key=api_key)
             except Exception as e:
-                # API 초기화 실패 시 클라이언트를 None으로 설정하고 사용자에게 오류 메시지 표시
+                # API 초기화 실패 시 처리
                 error_msg = f"Gemini API 클라이언트 초기화 오류: {e}"
                 QMessageBox.critical(self, "API 오류", "Gemini API 클라이언트 초기화에 실패했습니다.\n\n" + error_msg)
                 print(error_msg)
                 self.client = None
             
-        # 2. UI 위젯 생성 (UI 파일을 대체)
-        self.answerDisplay = QTextEdit()  # 응답 출력 (QTextEdit)
-        self.answerDisplay.setReadOnly(True) 
-        self.answerDisplay.setText("질문을 입력하고 '전송' 버튼을 누르세요. (Gemini 2.5 Flash 사용)\n\n[제미나이nh]")
-        
-        self.lineEditMyQuestion = QLineEdit() # 질문 입력 (QLineEdit)
-        self.lineEditMyQuestion.setPlaceholderText("여기에 질문을 입력하세요...")
-        
-        self.btnSent = QPushButton("전송 (Sent)") # 전송 버튼 (QPushButton)
-        self.btnSent.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; font-weight: bold;")
-        
-        # 검색 버튼: 사용자가 Qt Designer로 이미 추가했을 수도 있으므로
-        # 존재하지 않으면 코드에서 생성합니다.
-        if not hasattr(self, 'btnSearch'):
-            self.btnSearch = QPushButton("검색 (Search)")
-            self.btnSearch.setStyleSheet("background-color: #2196F3; color: white; padding: 10px; font-weight: bold;")
-        # 3. 레이아웃 설정
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(QLabel("Gemini 응답:"))
-        main_layout.addWidget(self.answerDisplay)
-        main_layout.addWidget(QLabel("나의 질문:"))
-        
-        input_layout = QHBoxLayout()
-        input_layout.addWidget(self.lineEditMyQuestion)
-        input_layout.addWidget(self.btnSent)
-        # 검색 버튼을 입력 레이아웃에 추가
-        input_layout.addWidget(self.btnSearch)
-        
-        main_layout.addLayout(input_layout)
-        self.setLayout(main_layout)
-
         # 4. 버튼 클릭 시그널 연결
         self.btnSent.clicked.connect(self.ask_gemini) 
+        self.btnSent.setVisible(False)
         # Enter 키 입력 시에도 작동하도록 연결
         self.lineEditMyQuestion.returnPressed.connect(self.ask_gemini)
-        # 검색 버튼 연결: DB에서 저장된 대화 내역 검색 및 출력
+        
+        # 검색 버튼 연결 (UI에 btnSearch가 있다면 연결)
         try:
             self.btnSearch.clicked.connect(self.search_mysql)
         except Exception:
@@ -124,7 +83,7 @@ class GeminiApp(QWidget):
         # API 클라이언트 초기화 실패 시 처리
         if not self.client:
             self.answerDisplay.setText("Gemini API 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요. [제미나이nh]")
-            return
+            return      
 
         question = self.lineEditMyQuestion.text().strip()
 
@@ -134,6 +93,11 @@ class GeminiApp(QWidget):
         
         # 질문 입력창 비우기
         self.lineEditMyQuestion.clear()
+        
+        # 먼저 DB에서 검색 시도
+        if self.search_mysql(search_text=question) == True:
+            return  # 검색 결과가 있으면 새 질문 처리 중단
+
 
         # 응답 대기 메시지 표시 (HTML)
         waiting_html = f"<div>➡️ 질문: <b>{html.escape(question)}</b></div>" \
@@ -149,7 +113,6 @@ class GeminiApp(QWidget):
             )
 
             # 응답 표시 및 [제미나이nh] 추가
-            # HTML로 질문/응답을 색상 처리: 응답은 녹색으로 표시
             esc_question = html.escape(question).replace('\n', '<br>')
             esc_response = html.escape(response.text).replace('\n', '<br>')
             html_content = (
@@ -179,39 +142,32 @@ class GeminiApp(QWidget):
             # 1. 현재 시간 구하기
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # 2. DB 연결 (요청마다 연결하고 끊는 것이 끊김 현상 방지에 좋습니다)
+            # 2. DB 연결
             conn = pymysql.connect( 
-                host='bitnmeta2.synology.me', # MySQL 호스트 주소
-                user='iyrc', # MySQL 사용자명
-                passwd='Dodan1004!', # MySQL 비밀번호
-                db='gemini_ai', # 사용할 데이터베이스 이름
-                charset='utf8', # 문자셋 설정
+                host='bitnmeta2.synology.me',
+                user='iyrc',
+                passwd='Dodan1004!',
+                db='gemini_ai',
+                charset='utf8',
                 port=3307,  
-                cursorclass=pymysql.cursors.DictCursor # 딕셔너리 커서 사용
+                cursorclass=pymysql.cursors.DictCursor
             )
 
             with conn.cursor() as cursor:
-                # 3. SQL 쿼리 작성 
-                # ★ 'chat_history' 부분을 실제 테이블 이름으로 바꿔주세요!
                 sql = "INSERT INTO chat_history (question, answer, create_at) VALUES (%s, %s, %s)"
-                
-                # 4. 실행 (데이터 매핑)
                 cursor.execute(sql, (question, answer, current_time))
             
-            # 5. 저장 확정 (Commit)
             conn.commit()
             print(f"✅ MySQL 저장 성공: {current_time}")
         
         except Exception as e:
             # MySQL Data too long for column -> 에러코드 1406 처리
             err_str = str(e)
-            print(f"❌ MySQL 저장 실패: {err_str}")
+            print(f"❌ 데이터를 요약하고 있습니다.: {err_str}")
 
             is_data_too_long = False
             try:
-                # pymysql.DataError / error code check
                 if hasattr(e, 'args') and e.args:
-                    # e.args[0]이 에러코드일 수 있음
                     if isinstance(e.args[0], int) and e.args[0] == 1406:
                         is_data_too_long = True
                 if '1406' in err_str or 'Data too long' in err_str:
@@ -222,19 +178,15 @@ class GeminiApp(QWidget):
             if is_data_too_long:
                 # 기존 연결 안전하게 종료
                 if conn:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
+                    try: conn.close()
+                    except: pass
                     conn = None
 
-                # 요약 시도: 가능하면 Gemini로 요약하고, 실패하면 잘라서 저장
+                # 요약 시도
                 summarized = None
                 try:
                     if self.client:
-                        prompt = (
-                            "아래 텍스트를 한국어로 500자 이내로 요약해 주세요.\n\n" + str(answer)
-                        )
+                        prompt = ("아래 텍스트를 한국어로 500자 이내로 요약해 주세요.\n\n" + str(answer))
                         summ_resp = self.client.models.generate_content(
                             model='gemini-2.5-flash',
                             contents=prompt
@@ -243,7 +195,6 @@ class GeminiApp(QWidget):
                 except Exception as se:
                     print(f"요약 시도 중 오류: {se}")
 
-                # 요약이 없거나 너무 긴 경우 강제 자르기
                 if not summarized:
                     summarized = str(answer)[:500]
                 if len(summarized) > 500:
@@ -251,7 +202,6 @@ class GeminiApp(QWidget):
 
                 # 재시도: 새 연결로 안전하게 INSERT
                 try:
-                    sql = "INSERT INTO chat_history (question, answer, create_at) VALUES (%s, %s, %s)"
                     conn2 = pymysql.connect(
                         host='bitnmeta2.synology.me',
                         user='iyrc',
@@ -262,42 +212,40 @@ class GeminiApp(QWidget):
                         cursorclass=pymysql.cursors.DictCursor
                     )
                     with conn2.cursor() as cursor2:
+                        sql = "INSERT INTO chat_history (question, answer, create_at) VALUES (%s, %s, %s)"
                         cursor2.execute(sql, (question, summarized, current_time))
                     conn2.commit()
                     print(f"✅ MySQL 요약 저장 성공: {current_time}")
-                    # 사용자에게 알림: 요약 저장되었음을 표시 (회색 알림)
-                    notice_html = (
-                        f"<div style='color:gray;'>원문이 길어 요약(500자 이내)으로 저장했습니다.</div>"
-                    )
-                    # 기존 answerDisplay 내용 뒤에 알림을 추가
+                    
+                    # 사용자에게 알림
+                    notice_html = f"<div style='color:gray;'>원문이 길어 요약(500자 이내)으로 저장했습니다.</div>"
                     try:
                         prev_html = self.answerDisplay.toHtml()
                         self.answerDisplay.setHtml(prev_html + notice_html)
                     except Exception:
                         self.answerDisplay.append("원문이 길어 요약(500자 이내)으로 저장했습니다.")
+                        
                 except Exception as re:
                     print(f"❌ 요약 재저장 실패: {re}")
-            # 기타 DB 에러는 그대로 로깅
         
         finally:
-            # 6. 연결 종료 (자원 해제)
             if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+                try: conn.close()
+                except: pass
             if conn2:
-                try:
-                    conn2.close()
-                except Exception:
-                    pass
+                try: conn2.close()
+                except: pass
 
-    def search_mysql(self):
-        """DB의 `chat_history`에서 저장된 항목을 검색하여 `answerDisplay`에 출력합니다.
-        - 검색어가 `lineEditMyQuestion`에 있으면 그 키워드로 LIKE 검색합니다.
-        - 검색어가 비어있으면 최신 항목을 일부 가져와 출력합니다.
+    def search_mysql(self, search_text=None):
         """
-        keyword = self.lineEditMyQuestion.text().strip()
+        DB 검색 함수.
+        search_text 인자가 있으면 그것으로 검색하고,
+        없으면 입력창(lineEditMyQuestion)의 텍스트를 가져와서 검색합니다.
+        """
+        if search_text is not None:
+            keyword = search_text.strip()
+        else:
+            keyword = self.lineEditMyQuestion.text().strip()
 
         try:
             conn = pymysql.connect(
@@ -319,20 +267,20 @@ class GeminiApp(QWidget):
                     like_kw = f"%{keyword}%"
                     cursor.execute(sql, (like_kw, like_kw))
                 else:
-                    sql = ("SELECT question, answer, create_at "
-                           "FROM chat_history "
-                           "ORDER BY create_at DESC LIMIT 50")
-                    cursor.execute(sql)
+                    # 검색어가 없으면 작동하지 않도록 수정하거나, 최근 대화를 보여주도록 설정
+                    # 여기서는 검색어가 없으면 False 반환하여 Gemini에게 질문하도록 함
+                    return False
 
                 rows = cursor.fetchall()
 
             if not rows:
-                # 검색 결과가 없음을 파랑색으로 표시
-                self.answerDisplay.setHtml("<div style='color:blue;'>검색 결과가 없습니다.</div>")
-                return
+                # 검색 결과가 없으면 Gemini에게 질문하기 위해 False 반환
+                return False
 
             # 결과 포맷팅
             lines = []
+            lines.append(f"<div style='color:blue; font-weight:bold;'>[DB 검색 결과: '{keyword}']</div><hr>")
+            
             for i, row in enumerate(rows, start=1):
                 created = row.get('create_at') or row.get('created_at') or ''
                 q = row.get('question', '')
@@ -340,7 +288,7 @@ class GeminiApp(QWidget):
                 esc_q = html.escape(str(q)).replace('\n', '<br>')
                 esc_a = html.escape(str(a)).replace('\n', '<br>')
                 block = (
-                    f"<div style='color:blue; margin-bottom:10px;'>"
+                    f"<div style='color:blue; margin-bottom:15px;'>"
                     f"<div><b>{i}. [{html.escape(str(created))}]</b></div>"
                     f"<div><b>Q:</b> {esc_q}</div>"
                     f"<div><b>A:</b> {esc_a}</div>"
@@ -349,27 +297,21 @@ class GeminiApp(QWidget):
                 lines.append(block)
 
             result_html = "".join(lines)
-            # 검색 결과(히스토리)를 파랑색 HTML로 출력
             self.answerDisplay.setHtml(result_html)
+            return True
 
         except Exception as e:
             err = f"DB 검색 중 오류 발생: {e}"
             print(err)
             self.answerDisplay.setText(err)
+            return False
 
         finally:
-            if 'conn' in locals():
+            if 'conn' in locals() and conn:
                 conn.close()
 
 if __name__ == "__main__":
-    # QApplication 인스턴스 생성
     app = QApplication(sys.argv)
-    
-    # 창 생성 및 표시
-    
     window = GeminiApp()
     window.show()
-    
-    # 이벤트 루프 실행
-
     sys.exit(app.exec())

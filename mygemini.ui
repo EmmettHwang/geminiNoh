@@ -1,17 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>Dialog</class>
- <widget class="QDialog" name="Dialog">
+ <class>geminiNoh</class>
+ <widget class="QDialog" name="geminiNoh">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>352</height>
+    <height>418</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Dialog</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>G:/내 드라이브/90. 우송대학교/43. 로고/3D캐릭터예진이.PNG</normaloff>G:/내 드라이브/90. 우송대학교/43. 로고/3D캐릭터예진이.PNG</iconset>
   </property>
   <widget class="QLabel" name="myPic">
    <property name="geometry">
@@ -30,11 +34,14 @@
    </property>
   </widget>
   <widget class="QPushButton" name="btnSent">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="geometry">
     <rect>
      <x>300</x>
-     <y>260</y>
-     <width>81</width>
+     <y>380</y>
+     <width>91</width>
      <height>31</height>
     </rect>
    </property>
@@ -46,53 +53,59 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>259</y>
+     <y>380</y>
      <width>281</width>
      <height>31</height>
     </rect>
-   </property>
-  </widget>
-  <widget class="QLabel" name="Answer">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>10</y>
-     <width>281</width>
-     <height>221</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>TextLabel</string>
    </property>
   </widget>
   <widget class="QLabel" name="label_2">
    <property name="geometry">
     <rect>
-     <x>310</x>
-     <y>130</y>
-     <width>56</width>
-     <height>12</height>
+     <x>300</x>
+     <y>320</y>
+     <width>101</width>
+     <height>91</height>
     </rect>
    </property>
    <property name="text">
-    <string>제미나이nh</string>
+    <string/>
+   </property>
+   <property name="pixmap">
+    <pixmap>G:/내 드라이브/90. 우송대학교/43. 로고/3D캐릭터예진이.PNG</pixmap>
+   </property>
+   <property name="scaledContents">
+    <bool>true</bool>
    </property>
   </widget>
-  <widget class="QPushButton" name="btnSearch">
+  <widget class="QTextBrowser" name="answerDisplay">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>10</y>
+     <width>281</width>
+     <height>361</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label">
    <property name="geometry">
     <rect>
      <x>300</x>
-     <y>300</y>
-     <width>81</width>
+     <y>290</y>
+     <width>101</width>
      <height>31</height>
     </rect>
    </property>
-   <property name="text">
-    <string>찾기</string>
+   <property name="font">
+    <font>
+     <family>신촌랩소디 TTF ExtraBold</family>
+     <weight>75</weight>
+     <bold>true</bold>
+    </font>
    </property>
-   <property name="icon">
-    <iconset>
-     <normaloff>search.png</normaloff>search.png</iconset>
+   <property name="text">
+    <string>안녕! 써니에요~~</string>
    </property>
   </widget>
  </widget>
